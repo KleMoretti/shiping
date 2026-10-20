@@ -1,5 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 const load = require('./load-source.cjs')
 
 test('proxy settings default to system; custom URLs are normalized and validated', () => {
@@ -122,6 +124,16 @@ test('failed proxy setup and fetch errors never fall back to a direct request or
   )
 })
 
+test('Chromium network errors are explained, other errors pass through', () => {
+  const { extractErrorMessage } = load('src/main/stream.ts')
+  assert.match(
+    extractErrorMessage(new Error('net::ERR_PROXY_CONNECTION_FAILED')),
+    /^代理连接失败.*网络代理.*（net::ERR_PROXY_CONNECTION_FAILED）$/
+  )
+  assert.match(extractErrorMessage(new Error('net::ERR_CONNECTION_REFUSED')), /^无法连接到 AI 接口/)
+  assert.equal(extractErrorMessage(new Error('Incorrect API key')), 'Incorrect API key')
+})
+
 test('thinking-off fallback uses the supplied transport and preserves cancellation', async () => {
   const { createThinkingOffFetch } = load('src/main/thinking.ts')
   const calls = [],
@@ -233,15 +245,9 @@ test('old settings default to system proxy and custom settings survive a restart
     removeItem: (key) => saved.delete(key)
   }
   const prompts = Object.fromEntries(
-    [
-      'coding',
-      'english-exam',
-      'aptitude-test',
-      'general-qa',
-      'tech-interview',
-      'behavioral-interview',
-      'english-interview'
-    ].map((name) => [`./prompts/${name}.md?raw`, 'fixture prompt'])
+    fs
+      .readdirSync(path.join(__dirname, '../src/renderer/src/lib/store/prompts'))
+      .map((name) => [`./prompts/${name}?raw`, 'fixture prompt'])
   )
   try {
     const { useSettingsStore: store } = load('src/renderer/src/lib/store/settings.ts', prompts)

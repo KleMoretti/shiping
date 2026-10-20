@@ -4,9 +4,11 @@ const net = require('node:net')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const fs = require('node:fs')
+const os = require('node:os')
 const load = require('./load-source.cjs')
 
-const data = path.join(__dirname, '..', 'out', 'proxy-test-user-data')
+// Not under out/: electron-builder packs everything there into the app
+const data = path.join(os.tmpdir(), 'shiping-proxy-test')
 fs.mkdirSync(data, { recursive: true })
 app.setPath('userData', data)
 const servers = [],

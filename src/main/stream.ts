@@ -88,7 +88,27 @@ function platformErrorMessage(error: unknown): string {
   }
 
   // Fallback to error message
-  return error.message || '未知错误'
+  return networkErrorMessage(error.message) ?? (error.message || '未知错误')
+}
+
+/**
+ * AI requests go through an Electron session (proxy.ts), so a connection that
+ * fails reaches here as Chromium's bare `net::ERR_…`; say what to check and
+ * keep the code for anyone searching it
+ */
+function networkErrorMessage(message: string): string | undefined {
+  const code = message.match(/net::ERR_[A-Z_]+/)?.[0]
+  if (!code) return undefined
+  const what = /PROXY|SOCKS|TUNNEL/.test(code)
+    ? '代理连接失败'
+    : /TIMED_OUT/.test(code)
+      ? '连接超时'
+      : /NAME_NOT_RESOLVED/.test(code)
+        ? '域名解析失败'
+        : /CERT|SSL/.test(code)
+          ? 'TLS 证书验证失败'
+          : '无法连接到 AI 接口'
+  return `${what}，请检查 API 地址、网络和「设置 → 网络代理」（${code}）`
 }
 
 /**

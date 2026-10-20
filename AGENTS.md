@@ -15,6 +15,7 @@ Key capabilities:
 - 对话模式 (conversation mode): a second page for voice interviews — the other side's sentences on the left, short AI hints on the right, no screenshots; hints come automatically when a sentence ends or on a shortcut
 - 手机同步: 截图模式's answer and 对话模式's hints mirrored read-only to a phone's browser — over the LAN (the app serves the page, scan a QR code) or through the user's own public relay (`relay/`)
 - Configurable AI provider (OpenAI, SiliconFlow, OpenRouter, or any OpenAI-compatible API)
+- 网络代理: AI requests follow the system proxy (PAC included) by default, or go through a custom HTTP / HTTPS / SOCKS5 proxy, or direct
 
 ## Tech Stack
 
@@ -46,6 +47,9 @@ src/
 │   ├── knowledge-parse.ts   # Text out of an imported PDF (unpdf) / .docx (mammoth) / Markdown / TXT (UTF-8, UTF-16, GBK)
 │   ├── thinking.ts          # 「关闭思考」: per-platform request-body fields + retry without them when refused
 │   ├── model-list.ts        # `listModels` IPC: a platform's `/models` list (+ SiliconFlow vision flags scraped from its public model square)
+│   ├── api-fetch.ts         # apiFetch: the one transport of AI requests and model lists, through the 网络代理 setting
+│   ├── proxy.ts             # 网络代理: one in-memory Electron session per proxy setting, the connection test and system proxy detection
+│   ├── proxy-ipc.ts         # `proxy:detect` / `proxy:test` IPC (kept apart so tests load proxy.ts without ipcMain)
 │   ├── mobile-sync.ts       # 手机同步: builds the phone state from registered sources, LAN server (relay core in-process) + relay host client
 │   ├── raw.d.ts             # `*?raw` imports (the phone page, inlined from relay/public)
 │   ├── settings.ts          # App settings object + IPC handlers
@@ -69,6 +73,7 @@ src/
 │   ├── knowledge.ts         # KnowledgeDoc type, the suggested per-mode limit, estimateTokens()
 │   ├── update.ts            # AvailableUpdate: a newer release main found, and how far its download got
 │   ├── conversation.ts      # 对话模式 types (Utterance, HintCard, HintMode) + countMeaningfulChars()
+│   ├── proxy.ts             # 网络代理: ProxySettings + normalizeProxySettings() (validated on both sides of IPC), modelsURL()
 │   └── mobile.ts            # 手机同步: MobileState (what phones get) + MobileSyncStatus (for the settings page)
 └── renderer/
     ├── index.html            # SPA entry
@@ -90,7 +95,7 @@ src/
         │   ├── ConversationStatusBar.tsx # Listening, 自动/手动, hint / stop buttons with shortcuts
         │   └── listening.ts  # Start / stop recognition (`purpose: 'conversation'`), toggle hint mode
         ├── settings/         # Settings page: left nav, one group at a time (`?tab=`)
-        │   ├── index.tsx     # Shell: nav (通用: AI 模型 / 资料库 / 语音 / 界面与隐私 / 手机同步 / 快捷键; 模式: 截图模式 / 对话模式)
+        │   ├── index.tsx     # Shell: nav (通用: AI 模型 / 网络代理 / 资料库 / 语音 / 界面与隐私 / 手机同步 / 快捷键; 模式: 截图模式 / 对话模式)
         │   ├── sections/     # One component per nav entry
         │   ├── components.tsx      # SettingsCard, Field, SaveDirField, Advanced (folded), SecretInput
         │   ├── SceneEditor.tsx     # One mode's prompt scenes: pick, edit, add, delete, restore
@@ -141,6 +146,11 @@ src/
         └── assets/
             ├── base.css      # Tailwind @import, CSS variables, app layout styles
             └── main.css      # Tailwind + typography plugin + theme variables (oklch)
+
+tests/                       # `npm test` (node:test) and `npm run test:proxy` (real Electron network stack); not shipped in the app
+├── load-source.cjs          # Runs checked-in TS by transpiling it with `typescript`, with per-test mocks for imports
+├── proxy.test.cjs           # Unit tests: proxy settings, transport wiring, error messages, settings store
+└── electron-proxy.cjs       # Started by run-electron.cjs: local HTTP / SOCKS5 proxies against real sessions
 
 relay/                       # 手机同步's relay + phone page: its own package (`ws` only), not shipped in the app
 ├── relay.mjs                # createRelay(): HTTP + WebSocket core, used by server.mjs and in-process by mobile-sync.ts
@@ -197,6 +207,7 @@ relay/                       # 手机同步's relay + phone page: its own packag
 **Renderer → Main (invoke):**
 - `getAppSettings` / `updateAppSettings` — settings CRUD
 - `listModels` — fetch the model list of an OpenAI-compatible platform (runs in main to avoid CORS)
+- `proxy:detect` / `proxy:test` — 网络代理: the system proxy's route for the edited profile's URL; a draft proxy setting tried on that profile's `/models` (10s, saves nothing)
 - `getDisplays` — connected screens (numbered left to right) for the capture-screen picker
 - `pickCaptureRegion` — cover every screen with a region picker; resolves with the region, or null if cancelled
 - `getRegionPickerData` / `region-picker-ready` / `finish-region-picker` (the last two `send`) — a picker window fetches its frozen screen, asks to be shown once painted, and reports the result
@@ -240,7 +251,7 @@ relay/                       # 手机同步's relay + phone page: its own packag
 
 | Store | File | Persisted | Key State |
 |-------|------|-----------|-----------|
-| `useSettingsStore` | `lib/store/settings.ts` | Yes (v8) | `apiProfiles`, `activeProfileId` (the one being edited), `screenshotProfileId`, `conversationProfileId`, `hasConfiguredApi`, `apiBaseURL`, `apiKey`, `apiHeaders`, `model`, `disableThinking` (mirror of the edited profile), `customModels`, `customModelsByBaseURL`, `modelByBaseURL`, `scenes` (prompt scenes, each with a `mode`), `activeSceneId` / `conversationSceneId`, `customPrompt` / `conversationPrompt` (derived from each mode's scene), `lastMode`, `conversationHintMode`, `conversationSilenceMs`, `conversationMinChars`, `conversationTranscriptHidden`, `conversationAutoSave`, `conversationSaveDir`, `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `hideShortcutHints`, `screenshotDisplay`, `captureScreen`, `captureRegion`, `screenshotAutoSave`, `screenshotDir`, `codeAutoSave`, `codeSaveDir`, `codeFileBaseName`, `codeNamingMode`, `codeCopyToClipboard`, `dashscopeApiKey`, `mobileLanEnabled`, `mobileLanKey`, `mobileRelayEnabled`, `mobileRelayURL`, `mobileRelayKey` |
+| `useSettingsStore` | `lib/store/settings.ts` | Yes (v8) | `apiProfiles`, `activeProfileId` (the one being edited), `screenshotProfileId`, `conversationProfileId`, `hasConfiguredApi`, `apiBaseURL`, `apiKey`, `apiHeaders`, `model`, `disableThinking` (mirror of the edited profile), `customModels`, `customModelsByBaseURL`, `modelByBaseURL`, `scenes` (prompt scenes, each with a `mode`), `activeSceneId` / `conversationSceneId`, `customPrompt` / `conversationPrompt` (derived from each mode's scene), `lastMode`, `conversationHintMode`, `conversationSilenceMs`, `conversationMinChars`, `conversationTranscriptHidden`, `conversationAutoSave`, `conversationSaveDir`, `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `hideShortcutHints`, `screenshotDisplay`, `captureScreen`, `captureRegion`, `screenshotAutoSave`, `screenshotDir`, `codeAutoSave`, `codeSaveDir`, `codeFileBaseName`, `codeNamingMode`, `codeCopyToClipboard`, `dashscopeApiKey`, `mobileLanEnabled`, `mobileLanKey`, `mobileRelayEnabled`, `mobileRelayURL`, `mobileRelayKey`, `networkProxy` |
 | `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v5) | `shortcuts` (action → key mapping with categories); `merge` adds new default actions on every load, so a new shortcut needs no `version` bump |
 | `useSolutionStore` | `lib/store/solution.ts` | No | `isLoading`, `solutionChunks`, `reasoningRounds`, `liveRound`, `roundUi`, `screenshotData`, `errorMessage`, `durationMs` |
 | `useTranscriptionStore` | `lib/store/transcription.ts` | No | `isTranscribing`, `transcriptionText`, `errorMessage` |
@@ -289,6 +300,7 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 
 - All AI calls go through `src/main/ai.ts` using Vercel AI SDK's `streamText()`
 - Provider: `@ai-sdk/openai-compatible` with custom `baseURL` (works with any OpenAI-compatible API; an empty one means OpenAI, `DEFAULT_API_BASE_URL`). Not `@ai-sdk/openai`: its chat-completions parser drops the `reasoning_content` / `reasoning` deltas thinking models send
+- Transport (网络代理): every AI request, thinking-off retry and model list goes through `apiFetch` (`api-fetch.ts`), i.e. `ses.fetch` of an in-memory Electron session set to `networkProxy` (`system` by default, which follows the OS proxy and PAC; `custom` HTTP / HTTPS / SOCKS5; `direct`). Not Node's `fetch`, which ignores the system proxy. One session per distinct setting, created on first use and never changed, so testing a draft or switching proxies never touches a request already streaming, the default session (updater, renderer) or the OS. A failed connection surfaces as Chromium's `net::ERR_…`, which `extractErrorMessage()` turns into a hint pointing at 「设置 → 网络代理」. Transcription, 手机同步 and the update check keep their own connections
 - Custom request headers (`apiHeaders`, one `Name: Value` per line) go on every AI request and on the `/models` fetch, through `buildRequestHeaders()` in `src/shared/request-headers.ts`. They override the Bearer key case-insensitively, so a gateway can replace `Authorization`
 - Model fallback: `Qwen/Qwen3-VL-32B-Instruct` for SiliconFlow, `gpt-5-mini` otherwise
 - AI profiles (`apiProfiles`): each holds its own URL / key / headers / model / thinking switch / `vision` flag. Each mode sends its requests with its own (`screenshotProfileId` / `conversationProfileId`, picked in the mode's settings group or via 「用于」); main resolves it with `getModeProfile(mode)` in `settings.ts`. `activeProfileId` is only the profile open in the AI 模型 editor, mirrored onto the flat `apiBaseURL` / `apiKey` / `apiHeaders` / `model` / `disableThinking` fields the editor binds to (`CREDENTIAL_KEYS`). The profile is authoritative (`reconcileApiProfiles()` restores the flat fields from it on load), so never write those with `updateSetting`: use `updateCredential()`, `changeApiBaseURL()` or `setModel()`, which keep the profile in step — otherwise the edit is lost on the next profile switch or restart
@@ -429,6 +441,8 @@ The app was renamed from 截屏解题助手 (`interview-coder-cn`) to 识屏 (`s
 npm install          # Install dependencies
 npm run dev          # Start in dev mode (electron-vite dev)
 npm run build        # Typecheck + build (electron-vite build)
+npm test             # Unit tests (node:test, tests/*.test.cjs)
+npm run test:proxy   # Proxy checks against the real Electron network stack
 npm run build:mac    # Build macOS distributable
 npm run build:win    # Build Windows distributable
 npm run typecheck    # Run TypeScript type checking (node + web)
