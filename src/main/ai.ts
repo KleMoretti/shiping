@@ -4,6 +4,7 @@ import { settings, getModeProfile } from './settings'
 import { DEFAULT_API_BASE_URL, type ApiProfile, type AppMode } from '../shared/api-profile'
 import { buildRequestHeaders } from '../shared/request-headers'
 import { createThinkingOffFetch } from './thinking'
+import { apiFetch } from './api-fetch'
 import { getKnowledgePrompt } from './knowledge'
 import type { StreamChunk } from './stream'
 
@@ -32,10 +33,9 @@ function createProvider(profile: ApiProfile) {
     baseURL: profile.apiBaseURL.trim() || DEFAULT_API_BASE_URL,
     apiKey: profile.apiKey,
     headers: buildRequestHeaders(profile.apiKey, profile.apiHeaders),
-    // Only when asked for: a plain request is the one every platform accepts
-    ...(profile.disableThinking
-      ? { fetch: createThinkingOffFetch(profile.apiBaseURL, reportThinkingRefused) }
-      : {})
+    fetch: profile.disableThinking
+      ? createThinkingOffFetch(profile.apiBaseURL, reportThinkingRefused, apiFetch)
+      : apiFetch
   })
 }
 

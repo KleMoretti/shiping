@@ -18,6 +18,7 @@ import { createProfile, type ApiProfile } from '../api-profiles'
 import type { CaptureRegion } from '../../../../shared/capture-region'
 import type { AppMode } from '../../../../shared/api-profile'
 import type { HintMode } from '../../../../shared/conversation'
+import { DEFAULT_PROXY, normalizeProxySettings, type ProxySettings } from '../../../../shared/proxy'
 
 export type { Theme }
 export type { ApiProfile }
@@ -210,6 +211,7 @@ export const OPACITY_MAX = 1
 export const OPACITY_STEP = 0.05
 
 interface Settings {
+  networkProxy: ProxySettings
   /** Window colour scheme; `light` is a white background with dark text */
   theme: Theme
   /** Saved AI endpoints; the one being edited is mirrored onto the fields below */
@@ -376,6 +378,7 @@ interface SettingsStore extends Settings {
 }
 
 const defaultSettings: Settings = {
+  networkProxy: { ...DEFAULT_PROXY },
   theme: DEFAULT_THEME,
   // Seeded on rehydrate; the id must exist up front so the active profile resolves
   apiProfiles: [],
@@ -787,6 +790,11 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       merge: (persisted, current) => {
         const state = { ...current, ...(persisted as Partial<Settings>) }
+        try {
+          state.networkProxy = normalizeProxySettings(state.networkProxy)
+        } catch {
+          state.networkProxy = { ...DEFAULT_PROXY }
+        }
         // Rebuild the presets on every load, so ones added in a later version
         // show up for existing users; the ones the user deleted stay out
         const persistedScenes = Array.isArray(state.scenes) ? state.scenes : []

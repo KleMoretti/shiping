@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { buildRequestHeaders } from '../shared/request-headers'
 import { DEFAULT_API_BASE_URL } from '../shared/api-profile'
+import { apiFetch } from './api-fetch'
 
 export interface PlatformModel {
   id: string
@@ -26,7 +27,7 @@ export interface ListModelsOptions {
 
 /**
  * Ask an OpenAI-compatible platform which models it serves. Runs in main
- * rather than the renderer to avoid CORS, and uses the same global `fetch` as
+ * rather than the renderer to avoid CORS, and uses the same API transport as
  * the AI SDK so the result reflects what a real request would hit.
  */
 async function listModels(
@@ -41,7 +42,7 @@ async function listModels(
   const url = `${base}/models${query ? `?${query}` : ''}`
   let res: Response
   try {
-    res = await fetch(url, {
+    res = await apiFetch(url, {
       headers: buildRequestHeaders(apiKey, headers),
       signal: AbortSignal.timeout(10_000)
     })
@@ -93,7 +94,7 @@ let siliconflowVision: Promise<Map<string, boolean> | undefined> | undefined
 
 function fetchSiliconflowVision(): Promise<Map<string, boolean> | undefined> {
   if (!siliconflowVision) {
-    siliconflowVision = fetch(SILICONFLOW_MODEL_SQUARE, { signal: AbortSignal.timeout(10_000) })
+    siliconflowVision = apiFetch(SILICONFLOW_MODEL_SQUARE, { signal: AbortSignal.timeout(10_000) })
       .then(async (res) => {
         if (!res.ok) return undefined
         const flags = parseSiliconflowVision(await res.text())

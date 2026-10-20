@@ -68,7 +68,8 @@ const refused = new Set<string>()
  */
 export function createThinkingOffFetch(
   baseURL: string,
-  onRefused: (model: string) => void
+  onRefused: (model: string) => void,
+  transport: typeof fetch = fetch
 ): typeof fetch {
   return async (input, init) => {
     let body: unknown
@@ -77,13 +78,13 @@ export function createThinkingOffFetch(
     } catch {
       body = undefined
     }
-    if (!body || typeof body !== 'object' || Array.isArray(body)) return fetch(input, init)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return transport(input, init)
 
     const model = String((body as { model?: unknown }).model ?? '')
     const key = `${baseURL.trim()}\n${model}`
-    if (refused.has(key)) return fetch(input, init)
+    if (refused.has(key)) return transport(input, init)
 
-    const response = await fetch(input, {
+    const response = await transport(input, {
       ...init,
       body: JSON.stringify({ ...body, ...thinkingOffFields(baseURL, model) })
     })
@@ -96,6 +97,6 @@ export function createThinkingOffFetch(
 
     refused.add(key)
     onRefused(model)
-    return fetch(input, init)
+    return transport(input, init)
   }
 }

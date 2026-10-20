@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { findProvider, normalizeBaseURL, type PlatformModel } from './providers'
+import { useSettingsStore } from './store/settings'
 
 export type PlatformModelsState =
   | { status: 'idle' }
@@ -20,12 +21,13 @@ const FETCH_DELAY_MS = 600
  * URL + key + headers for the session. Stays `idle` while an API key is required but missing.
  */
 export function usePlatformModels(baseURL: string, apiKey: string, headers: string) {
+  const networkProxy = useSettingsStore((state) => state.networkProxy)
   const [state, setState] = useState<PlatformModelsState>({ status: 'idle' })
   const [attempt, setAttempt] = useState(0)
 
   const url = normalizeBaseURL(baseURL)
   const key = apiKey.trim()
-  const cacheKey = `${url}\n${key}\n${headers}`
+  const cacheKey = `${url}\n${key}\n${headers}\n${JSON.stringify(networkProxy)}`
   const provider = findProvider(url)
   const canFetch = !!key || !!provider?.publicModelList
   const query = provider?.modelListQuery

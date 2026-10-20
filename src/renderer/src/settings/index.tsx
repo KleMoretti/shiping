@@ -8,6 +8,7 @@ import {
   LibraryBig,
   MessagesSquare,
   Mic,
+  Network,
   Palette,
   Smartphone,
   type LucideIcon
@@ -25,9 +26,11 @@ import { ScreenshotSection } from './sections/ScreenshotSection'
 import { ConversationSection } from './sections/ConversationSection'
 import { KnowledgeSection } from './sections/KnowledgeSection'
 import { MobileSection } from './sections/MobileSection'
+import { NetworkSection } from './sections/NetworkSection'
 
 type Tab =
   | 'ai'
+  | 'network'
   | 'knowledge'
   | 'voice'
   | 'appearance'
@@ -45,6 +48,7 @@ const NAV: { heading: string; items: { tab: Tab; label: string; Icon: LucideIcon
     heading: '通用',
     items: [
       { tab: 'ai', label: 'AI 模型', Icon: Bot },
+      { tab: 'network', label: '网络代理', Icon: Network },
       { tab: 'knowledge', label: '资料库', Icon: LibraryBig },
       { tab: 'voice', label: '语音', Icon: Mic },
       { tab: 'appearance', label: '界面与隐私', Icon: Palette },
@@ -111,6 +115,7 @@ export default function SettingsPage() {
 
   const sections: Record<Tab, ReactNode> = {
     ai: <AiModelsSection />,
+    network: <NetworkSection />,
     knowledge: <KnowledgeSection />,
     voice: <VoiceSection />,
     appearance: <AppearanceSection />,
