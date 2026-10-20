@@ -11,6 +11,8 @@ import type { ConversationSnapshot, HintCard, Utterance } from '../shared/conver
 import type { KnowledgeDoc, KnowledgeImportResult, KnowledgePatch } from '../shared/knowledge'
 import type { AvailableUpdate } from '../shared/update'
 import type { MobileSyncStatus } from '../shared/mobile'
+import type { ProxySettings, ProxyDetection, ProxyTestResult } from '../shared/proxy'
+import type { ApiProfile } from '../shared/api-profile'
 
 // Custom APIs for renderer
 const api = {
@@ -34,6 +36,12 @@ const api = {
   // Fetch the model IDs an OpenAI-compatible platform serves (its `/models` endpoint)
   listModels: (baseURL: string, apiKey: string, options?: ListModelsOptions) =>
     ipcRenderer.invoke('listModels', baseURL, apiKey, options) as Promise<ModelListResult>,
+  detectSystemProxy: (baseURL: string) =>
+    ipcRenderer.invoke('proxy:detect', baseURL) as Promise<ProxyDetection>,
+  testProxyConnection: (
+    proxy: ProxySettings,
+    profile: Pick<ApiProfile, 'apiBaseURL' | 'apiKey' | 'apiHeaders'>
+  ) => ipcRenderer.invoke('proxy:test', proxy, profile) as Promise<ProxyTestResult>,
 
   // Resize transparent frameless windows without toggling Electron's native resizable style
   startWindowResize: (direction: 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw') =>

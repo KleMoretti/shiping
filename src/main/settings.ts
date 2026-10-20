@@ -3,6 +3,7 @@ import type { CaptureRegion } from '../shared/capture-region'
 import type { ApiProfile, AppMode } from '../shared/api-profile'
 import type { HintMode } from '../shared/conversation'
 import { setToolbarOpacity, syncToolbarSettings } from './toolbar-window'
+import { DEFAULT_PROXY, normalizeProxySettings } from '../shared/proxy'
 
 ipcMain.handle('getAppVersion', () => {
   return app.getVersion()
@@ -21,6 +22,9 @@ export function onSettingsChanged(listener: SettingsListener): void {
 }
 
 ipcMain.handle('updateAppSettings', (_event, _settings) => {
+  if ('networkProxy' in _settings) {
+    _settings = { ..._settings, networkProxy: normalizeProxySettings(_settings.networkProxy) }
+  }
   const previous = { ...settings }
   Object.assign(settings, _settings)
   for (const listener of settingsListeners) listener(previous)
@@ -65,6 +69,7 @@ ipcMain.handle('selectCodeDir', () => pickDirectory('选择代码保存目录'))
 ipcMain.handle('selectConversationDir', () => pickDirectory('选择对话记录保存目录'))
 
 export const settings = {
+  networkProxy: { ...DEFAULT_PROXY },
   /** Window colour scheme, kept in sync with the renderer; see renderer lib/theme.ts */
   theme: 'dark' as 'dark' | 'light',
   apiBaseURL: process.env.API_BASE_URL || '',
