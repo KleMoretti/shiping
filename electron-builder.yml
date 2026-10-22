@@ -1,5 +1,8 @@
 appId: com.electron.app # 改名后不变：macOS 的权限授予和 Windows 安装的升级都认它
 productName: 识屏
+extraMetadata:
+  # Windows exe 的 FileDescription 取自 description，任务管理器「进程」页显示的就是它；package.json 的那句长介绍留给仓库
+  description: Shiping
 directories:
   buildResources: build
 files:
@@ -15,7 +18,7 @@ asarUnpack:
   - resources/**
 afterPack: build/after-pack.mjs # macOS 由它用自签名证书签名，原因见文件开头
 win:
-  executableName: 识屏
+  executableName: Shiping # 任务管理器「详细信息」页显示的文件名；快捷方式和卸载列表仍用 productName「识屏」
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
