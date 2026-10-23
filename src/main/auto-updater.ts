@@ -43,36 +43,62 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-const LATEST_URL = `https://github.com/${REPO}/releases/latest`
+/**
+ * electron-updater downloads it from the Latest release on every Windows
+ * check, and the macOS check does too, so its download count on the release
+ * page counts the checks of both. macOS never reads it (it describes the
+ * Windows installer), only where its link redirects.
+ */
+const LATEST_ASSET_URL = `https://github.com/${REPO}/releases/latest/download/latest.yml`
+const ASSET_URL = /\/releases\/download\/([^/?#]+)\/[^/?#]+$/
 const TAG_URL = /\/releases\/tag\/([^/?#]+)$/
 
 /**
- * Where the `releases/latest` page redirects (`…/releases/tag/v3.2.2`), which
- * skips drafts and pre-releases. Not the REST API: without a token it allows
+ * The Latest release's page (`…/releases/tag/v3.2.2`), from where
+ * `releases/latest/download/<asset>` redirects (`…/releases/download/v3.2.2/<asset>`),
+ * which skips drafts and pre-releases. GitHub redirects there whether the
+ * release has the asset or not. Not the REST API: without a token it allows
  * 60 requests an hour per IP, and a proxy exit shared by many users runs out
  * of them. Electron's `net` goes through the system proxy, which GitHub often
  * needs from China. A renamed repository first redirects to its new
- * `releases/latest`, which redirects again to the tag.
+ * `releases/latest/download/<asset>`.
+ *
+ * The redirects are then followed to the file itself, so the check counts as
+ * a download; whether that part fails does not change the result.
  */
 function getLatestReleaseUrl(): Promise<string | null> {
   return new Promise((resolve, reject) => {
-    // net.fetch would follow the redirect without telling where it led
-    const request = net.request({ url: LATEST_URL, redirect: 'manual' })
+    // net.fetch would follow the redirects without telling where they led
+    const request = net.request({ url: LATEST_ASSET_URL, redirect: 'manual' })
     const timer = setTimeout(() => request.abort(), 15_000)
-    const settle = (finish: () => void): void => {
-      clearTimeout(timer)
-      finish()
-      request.abort()
-    }
     let hops = 0
     request.on('redirect', (_status, _method, redirectUrl) => {
-      if (!TAG_URL.test(redirectUrl) && ++hops < 3) request.followRedirect()
-      else settle(() => resolve(redirectUrl))
+      if (ASSET_URL.test(redirectUrl)) {
+        resolve(redirectUrl.replace(ASSET_URL, '/releases/tag/$1'))
+      }
+      if (++hops < 5) {
+        request.followRedirect()
+      } else {
+        resolve(null)
+        request.abort()
+      }
     })
-    // No redirect: nothing released, or an error page
-    request.on('response', () => settle(() => resolve(null)))
-    request.on('error', (err) => settle(() => reject(err)))
-    request.on('abort', () => reject(new Error('Timed out')))
+    // The file, a 404 page if the release lacks it, or with no redirect at all
+    // an error page (nothing released). Read to the end, then the check is done.
+    request.on('response', (response) => {
+      resolve(null)
+      response.on('data', () => {})
+      response.on('end', () => clearTimeout(timer))
+      response.on('error', () => clearTimeout(timer))
+    })
+    request.on('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
+    request.on('abort', () => {
+      clearTimeout(timer)
+      reject(new Error('Timed out'))
+    })
     request.end()
   })
 }
