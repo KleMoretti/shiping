@@ -1,5 +1,7 @@
 # 识屏 Shiping
 
+> **Windows 自用分支**：本仓库以 `win` 为默认开发和发布分支，`main` 保留用于同步 [上游项目](https://github.com/ooboqoo/shiping)。Windows 安装包见 [Releases](https://github.com/KleMoretti/shiping/releases)。语音模型可在「设置 → 语音」选择；资料库支持 Ctrl / Shift 多选或拖入多个文件，导入后显示成功和失败数量。
+
 > 屏幕上的内容，截一下，AI 就看懂：题目、代码、报错、图表、外文资料，按下快捷键就有解答；听对话时，对方说完就有提示。屏幕共享时对方看不到窗口。
 
 > **改名说明**：本项目原名「截屏解题助手」（仓库 `interview-coder-cn`），2026 年 10 月起改名为「识屏 Shiping」（仓库 `shiping`）。功能不变，升级后原有设置自动保留。为什么改、改了哪些，见[关于改名](#关于改名)。

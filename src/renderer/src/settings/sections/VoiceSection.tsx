@@ -9,11 +9,17 @@ import {
 } from '@/components/ui/select'
 import { useSettingsStore } from '@/lib/store/settings'
 import { Advanced, Field, SecretInput, SettingsCard } from '../components'
+import { TRANSCRIPTION_MODELS } from '../../../../shared/transcription'
 
 /** Speech recognition, shared by both modes: 截图模式 attaches it, 对话模式 is built on it */
 export function VoiceSection() {
-  const { dashscopeApiKey, audioInputDeviceId, audioOutputDeviceId, updateSetting } =
-    useSettingsStore()
+  const {
+    dashscopeApiKey,
+    transcriptionModel,
+    audioInputDeviceId,
+    audioOutputDeviceId,
+    updateSetting
+  } = useSettingsStore()
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
 
   useEffect(() => {
@@ -58,6 +64,24 @@ export function VoiceSection() {
             onChange={(value) => updateSetting('dashscopeApiKey', value)}
             placeholder="输入百炼平台 API Key"
           />
+        </Field>
+
+        <Field label="语音识别模型" note="两个模式共用；更换模型后，下次开始转录时生效">
+          <Select
+            value={transcriptionModel}
+            onValueChange={(value) => updateSetting('transcriptionModel', value)}
+          >
+            <SelectTrigger className="w-full min-w-0 bg-white" aria-label="语音识别模型">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TRANSCRIPTION_MODELS.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
 
         <Field

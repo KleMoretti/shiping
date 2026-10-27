@@ -4,6 +4,7 @@ import type { ApiProfile, AppMode } from '../shared/api-profile'
 import type { HintMode } from '../shared/conversation'
 import { setToolbarOpacity, syncToolbarSettings } from './toolbar-window'
 import { DEFAULT_PROXY, normalizeProxySettings } from '../shared/proxy'
+import { DEFAULT_TRANSCRIPTION_MODEL } from '../shared/transcription'
 
 ipcMain.handle('getAppVersion', () => {
   return app.getVersion()
@@ -125,6 +126,7 @@ export const settings = {
   /** Copy the code block of a finished answer to the system clipboard */
   codeCopyToClipboard: false,
   dashscopeApiKey: '',
+  transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
   /** 手机同步 over the LAN: the app serves the phone page itself, see mobile-sync.ts */
   mobileLanEnabled: false,
   /** The LAN page's secret, made by the renderer on first use; a new one voids every QR code */

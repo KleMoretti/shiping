@@ -4,6 +4,7 @@ import {
   FileText,
   FileUp,
   LibraryBig,
+  LoaderCircle,
   Pencil,
   Plus,
   RefreshCw,
@@ -40,12 +41,12 @@ const MODES: { mode: AppMode; label: string }[] = [
   { mode: 'conversation', label: '对话' }
 ]
 
-/** One toast for what came in, one per file that did not */
+/** Keep a large batch from flooding the screen with one toast per failure. */
 function reportImport(result: KnowledgeImportResult) {
   const { added, failed } = result
   if (added.length === 1) toast.success(`已导入「${added[0].name}」`)
   else if (added.length > 1) toast.success(`已导入 ${added.length} 份资料`)
-  for (const { name, error } of failed) toast.error(`「${name}」导入失败`, { description: error })
+  if (failed.length > 0) toast.error(`${failed.length} 份资料导入失败，请查看导入结果`)
 }
 
 const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes('Files')
@@ -60,6 +61,9 @@ export function KnowledgeSection() {
   const [editing, setEditing] = useState<KnowledgeDoc | 'new' | null>(null)
   const [deleting, setDeleting] = useState<KnowledgeDoc | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<KnowledgeImportResult | null>(null)
+  const importInFlight = useRef(false)
   // dragenter / dragleave fire for every child crossed; only the outermost pair counts
   const dragDepth = useRef(0)
 
@@ -80,7 +84,24 @@ export function KnowledgeSection() {
   const handleImport = (result: KnowledgeImportResult | null) => {
     if (!result) return
     setDocs((list) => [...(list ?? []), ...result.added])
+    setImportResult(result)
     reportImport(result)
+  }
+
+  const importBatch = async (run: () => Promise<KnowledgeImportResult | null>) => {
+    if (importInFlight.current) return
+    importInFlight.current = true
+    setImporting(true)
+    try {
+      handleImport(await run())
+    } catch (error) {
+      toast.error('导入失败', {
+        description: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      importInFlight.current = false
+      setImporting(false)
+    }
   }
 
   const toggleMode = async (doc: KnowledgeDoc, mode: AppMode) => {
@@ -119,17 +140,19 @@ export function KnowledgeSection() {
       if (dragDepth.current === 0) setDragging(false)
     },
     onDrop: async (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
       dragDepth.current = 0
       setDragging(false)
       const paths = [...e.dataTransfer.files]
         .map((file) => window.api.getPathForFile(file))
         .filter(Boolean)
-      if (paths.length > 0) handleImport(await window.api.importKnowledgeFiles(paths))
+      if (paths.length > 0) await importBatch(() => window.api.importKnowledgeFiles(paths))
     }
   }
 
   return (
-    <div className="relative" {...dropHandlers}>
+    <div className="relative" aria-busy={importing} {...dropHandlers}>
       <SettingsCard Icon={LibraryBig} title="资料库">
         <p className="-mt-2 mb-4 text-xs font-light">
           导入简历、准备好的问答、笔记等资料，AI
@@ -140,10 +163,15 @@ export function KnowledgeSection() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            onClick={async () => handleImport(await window.api.pickKnowledgeFiles())}
+            disabled={importing}
+            onClick={() => importBatch(() => window.api.pickKnowledgeFiles())}
           >
-            <FileUp className="h-4 w-4" />
-            导入文件
+            {importing ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileUp className="h-4 w-4" />
+            )}
+            {importing ? '导入中…' : '批量导入文件'}
           </Button>
           <Button
             size="sm"
@@ -155,9 +183,26 @@ export function KnowledgeSection() {
             新建文本
           </Button>
           <span className="text-xs font-light">
-            支持 PDF、Word（.docx）、Markdown、TXT，也可以把文件拖到这里（选择弹窗可能被本窗口遮挡）
+            支持 PDF、Word（.docx）、Markdown、TXT。按住 Ctrl / Shift 多选文件，或一次拖入多个文件
           </span>
         </div>
+
+        {importResult && (
+          <div className="mb-4 rounded-md border p-3 text-xs" role="status">
+            <p>
+              本次导入：成功 {importResult.added.length} 份，失败 {importResult.failed.length} 份
+            </p>
+            {importResult.failed.length > 0 && (
+              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-red-600">
+                {importResult.failed.map((file, index) => (
+                  <li key={index} className="break-words">
+                    {file.name}：{file.error}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {docs && docs.length === 0 && (
           <div className="rounded-md border border-dashed border-gray-400 px-4 py-6 text-center text-sm text-gray-600">
@@ -186,7 +231,7 @@ export function KnowledgeSection() {
 
       {dragging && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-50/80 text-sm font-medium text-blue-700">
-          松开鼠标导入资料
+          {importing ? '正在导入，请稍候再拖入文件' : '松开鼠标批量导入资料'}
         </div>
       )}
 

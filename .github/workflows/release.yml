@@ -1,4 +1,4 @@
-name: Build and Release Electron App
+name: Build and Release Windows App
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
 
     steps:
       - name: Checkout repository
@@ -28,28 +28,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Self-signed certificate that build/after-pack.mjs signs the macOS app with
-      - name: Import macOS signing certificate
-        if: matrix.os == 'macos-latest'
-        env:
-          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
-          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
-          echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/codesign.p12"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          # codesign on macOS 26 finds no identity outside the search list, --keychain or not
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          security set-keychain-settings -lut 3600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/codesign.p12" -k "$KEYCHAIN" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          rm "$RUNNER_TEMP/codesign.p12"
-          echo "MAC_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Test
+        run: npm test
 
       - name: Package Electron app
-        run: npm run build:${{ matrix.os == 'windows-latest' && 'win' || 'mac' }}
+        run: npm run build:win -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -57,12 +40,19 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: electron-build-${{ matrix.os }}
-          path: dist/** # electron-builder output folder
+          path: |
+            dist/shiping-*.exe
+            dist/shiping-*.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
 
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
@@ -72,8 +62,10 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           draft: true
+          target_commitish: win
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
           files: |
-            dist/**/shiping-*.dmg
             dist/**/shiping-*.exe
             dist/**/shiping-*.exe.blockmap
             dist/**/latest.yml

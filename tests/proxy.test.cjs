@@ -229,7 +229,7 @@ test('model list requests use the configured API transport', async () => {
   assert.equal(result.models[0].id, 'fixture-model')
 })
 
-test('old settings default to system proxy and custom settings survive a restart', () => {
+test('old settings keep defaults; custom proxy and speech model survive a restart', () => {
   const saved = new Map([
     [
       'interview-coder-settings',
@@ -252,11 +252,14 @@ test('old settings default to system proxy and custom settings survive a restart
   try {
     const { useSettingsStore: store } = load('src/renderer/src/lib/store/settings.ts', prompts)
     assert.deepEqual(store.getState().networkProxy, { mode: 'system', url: '' })
+    assert.equal(store.getState().transcriptionModel, 'fun-asr-realtime')
     assert.equal(store.getState().apiKey, 'fixture-existing-key')
     const custom = { mode: 'custom', url: 'socks5://127.0.0.1:20808' }
     store.getState().updateSetting('networkProxy', custom)
+    store.getState().updateSetting('transcriptionModel', 'paraformer-realtime-v2')
     const { useSettingsStore: restarted } = load('src/renderer/src/lib/store/settings.ts', prompts)
     assert.deepEqual(restarted.getState().networkProxy, custom)
+    assert.equal(restarted.getState().transcriptionModel, 'paraformer-realtime-v2')
     assert.equal(restarted.getState().apiKey, 'fixture-existing-key')
   } finally {
     delete global.localStorage

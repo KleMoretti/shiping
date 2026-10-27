@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 import WebSocket from 'ws'
 import { randomUUID } from 'node:crypto'
+import { settings } from './settings'
+import { resolveTranscriptionModel } from '../shared/transcription'
 
 const WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/'
 
@@ -77,6 +79,7 @@ function startTranscription(apiKey: string, options: TranscriptionOptions = {}) 
   purpose = options.purpose ?? 'screenshot'
   taskId = randomUUID()
   const silence = options.maxSentenceSilence
+  const model = resolveTranscriptionModel(settings.transcriptionModel)
 
   ws = new WebSocket(WS_URL, {
     headers: { Authorization: `bearer ${apiKey}` }
@@ -93,7 +96,7 @@ function startTranscription(apiKey: string, options: TranscriptionOptions = {}) 
         task_group: 'audio',
         task: 'asr',
         function: 'recognition',
-        model: 'fun-asr-realtime',
+        model,
         parameters: {
           format: 'pcm',
           sample_rate: 16000,

@@ -19,6 +19,7 @@ import type { CaptureRegion } from '../../../../shared/capture-region'
 import type { AppMode } from '../../../../shared/api-profile'
 import type { HintMode } from '../../../../shared/conversation'
 import { DEFAULT_PROXY, normalizeProxySettings, type ProxySettings } from '../../../../shared/proxy'
+import { DEFAULT_TRANSCRIPTION_MODEL } from '../../../../shared/transcription'
 
 export type { Theme }
 export type { ApiProfile }
@@ -289,6 +290,7 @@ interface Settings {
   codeCopyToClipboard: boolean
 
   dashscopeApiKey: string
+  transcriptionModel: string
 
   /** 手机同步 over the LAN: the app serves the phone page itself */
   mobileLanEnabled: boolean
@@ -422,6 +424,7 @@ const defaultSettings: Settings = {
   codeCopyToClipboard: false,
 
   dashscopeApiKey: '',
+  transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
 
   mobileLanEnabled: false,
   mobileLanKey: '',

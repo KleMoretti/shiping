@@ -14,7 +14,7 @@ import type { AvailableUpdate } from '../shared/update'
  * alone: a pre-release is never offered.
  */
 
-const REPO = 'ooboqoo/shiping'
+const REPO = 'KleMoretti/shiping'
 // The app is often left running for days, on macOS especially
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 

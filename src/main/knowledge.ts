@@ -206,11 +206,15 @@ ipcMain.handle('knowledge:get-text', (_event, id: string) => {
 })
 
 ipcMain.handle('knowledge:pick-files', async () => {
-  const result = await dialog.showOpenDialog({
-    title: '导入资料',
+  const options: Electron.OpenDialogOptions = {
+    title: '批量导入资料（可多选）',
     properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'PDF、Word、Markdown、TXT', extensions: KNOWLEDGE_EXTENSIONS }]
-  })
+  }
+  const parent = global.mainWindow
+  const result = await (parent && !parent.isDestroyed()
+    ? dialog.showOpenDialog(parent, options)
+    : dialog.showOpenDialog(options))
   if (result.canceled || result.filePaths.length === 0) return null
   return importFiles(result.filePaths)
 })
