@@ -8,7 +8,13 @@ import type { RegionPickerData } from '../main/region-picker'
 import type { CaptureRegion, RegionRect } from '../shared/capture-region'
 import type { TranscriptionOptions } from '../main/transcription'
 import type { ConversationSnapshot, HintCard, Utterance } from '../shared/conversation'
-import type { KnowledgeDoc, KnowledgeImportResult, KnowledgePatch } from '../shared/knowledge'
+import type {
+  KnowledgeDoc,
+  KnowledgeImportResult,
+  KnowledgePatch,
+  KnowledgeFolder,
+  KnowledgeFolderResult
+} from '../shared/knowledge'
 import type { AvailableUpdate } from '../shared/update'
 import type { MobileSyncStatus } from '../shared/mobile'
 import type { ProxySettings, ProxyDetection, ProxyTestResult } from '../shared/proxy'
@@ -360,7 +366,7 @@ const api = {
     }
   },
 
-  // 资料库: main keeps the material on disk and puts it into each mode's system prompt
+  // 资料库: local file/folder snapshots, searched per question in main.
   listKnowledge: () => ipcRenderer.invoke('knowledge:list') as Promise<KnowledgeDoc[]>,
   getKnowledgeText: (id: string) => ipcRenderer.invoke('knowledge:get-text', id) as Promise<string>,
   // Open a file dialog and import what was picked; null if cancelled
@@ -368,6 +374,13 @@ const api = {
     ipcRenderer.invoke('knowledge:pick-files') as Promise<KnowledgeImportResult | null>,
   importKnowledgeFiles: (paths: string[]) =>
     ipcRenderer.invoke('knowledge:import-files', paths) as Promise<KnowledgeImportResult>,
+  listKnowledgeFolders: () => ipcRenderer.invoke('knowledge:folders') as Promise<KnowledgeFolder[]>,
+  pickKnowledgeFolder: () =>
+    ipcRenderer.invoke('knowledge:pick-folder') as Promise<KnowledgeFolderResult | null>,
+  refreshKnowledgeFolder: (id: string) =>
+    ipcRenderer.invoke('knowledge:refresh-folder', id) as Promise<KnowledgeFolderResult>,
+  removeKnowledgeFolder: (id: string) =>
+    ipcRenderer.invoke('knowledge:remove-folder', id) as Promise<void>,
   createKnowledge: (name: string, text: string) =>
     ipcRenderer.invoke('knowledge:create', name, text) as Promise<KnowledgeDoc>,
   updateKnowledge: (id: string, patch: KnowledgePatch) =>

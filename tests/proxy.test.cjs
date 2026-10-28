@@ -178,7 +178,7 @@ test('both chat modes and thinking-off requests use the same API transport', asy
       settings: {},
       getModeProfile: (mode) => ({ ...profile, disableThinking: mode === 'conversation' })
     },
-    './knowledge': { getKnowledgePrompt: () => '' },
+    './knowledge': { getKnowledgePrompt: () => '', hasKnowledge: () => false },
     './api-fetch': { apiFetch: transport },
     ai: {
       streamText: (options) => {
@@ -191,8 +191,12 @@ test('both chat modes and thinking-off requests use the same API transport', asy
     }
   })
   const abort = new AbortController()
-  ai.getSolutionStream([], abort.signal)
-  ai.getHintStream([], abort.signal)
+  for await (const _ of ai.getSolutionStream([], abort.signal)) {
+    /* drain */
+  }
+  for await (const _ of ai.getHintStream([], abort.signal)) {
+    /* drain */
+  }
   for (const options of streams) {
     assert.equal(options.abortSignal, abort.signal)
     await options.model.fetch('https://example.com', {

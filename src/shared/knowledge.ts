@@ -12,6 +12,10 @@ export interface KnowledgeDoc {
   source?: string
   /** Full path of that file, for 「重新导入」 */
   sourcePath?: string
+  /** Folder index this file belongs to; absent for individually imported material. */
+  folderId?: string
+  sourceMtimeMs?: number
+  sourceSize?: number
   chars: number
   /** Rough estimate, see `estimateTokens` */
   tokens: number
@@ -27,11 +31,21 @@ export interface KnowledgeImportResult {
   failed: { name: string; error: string }[]
 }
 
-/**
- * Above this many characters for one mode the settings page warns: answers get
- * slower and dearer, and small models run out of context. It is not enforced.
- */
-export const KNOWLEDGE_CHAR_LIMIT = 30000
+export interface KnowledgeFolder {
+  id: string
+  name: string
+  path: string
+  updatedAt: number
+}
+
+export interface KnowledgeFolderResult extends KnowledgeImportResult {
+  folder: KnowledgeFolder
+  updated: KnowledgeDoc[]
+  removedIds: string[]
+}
+
+/** Retrieve at most six relevant files, without truncating their contents. */
+export const KNOWLEDGE_RETRIEVAL_LIMIT = 6
 
 /** File types the importer reads */
 export const KNOWLEDGE_EXTENSIONS = ['pdf', 'docx', 'md', 'markdown', 'txt']

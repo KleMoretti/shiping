@@ -270,8 +270,12 @@ async function startHint(
   const stream: HintStream = { controller: new AbortController(), startedAt: Date.now() }
   streams.set(card.id, stream)
   const messages = buildMessages(fromId, toId, previous)
+  const question = utterances
+    .filter((u) => u.id >= fromId && u.id <= toId)
+    .map((u) => u.text)
+    .join('\n')
   const outcome = await consumeStream(
-    (signal) => getHintStream(messages, signal),
+    (signal) => getHintStream(messages, signal, question),
     stream.controller,
     (chunk) => {
       if (chunk.kind === 'reasoning') {

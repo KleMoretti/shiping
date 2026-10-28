@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { AppMode } from '../../../shared/api-profile'
-import {
-  KNOWLEDGE_CHAR_LIMIT,
-  type KnowledgeDoc,
-  type KnowledgeImportResult
-} from '../../../shared/knowledge'
+import { type KnowledgeDoc, type KnowledgeImportResult } from '../../../shared/knowledge'
 
 export type { KnowledgeDoc, KnowledgeImportResult }
-export { KNOWLEDGE_CHAR_LIMIT }
 
 /**
  * The 资料库 list, fetched from main (which owns it) on mount; null until it
@@ -27,12 +22,11 @@ export function useKnowledgeDocs() {
   return [docs, setDocs] as const
 }
 
-/** What a mode sends along with every request */
+/** How much local material a mode can search, not the size of a request. */
 export function knowledgeUsage(docs: KnowledgeDoc[], mode: AppMode) {
   const used = docs.filter((doc) => doc.modes.includes(mode))
   const chars = used.reduce((sum, doc) => sum + doc.chars, 0)
-  const tokens = used.reduce((sum, doc) => sum + doc.tokens, 0)
-  return { count: used.length, chars, tokens, over: chars > KNOWLEDGE_CHAR_LIMIT }
+  return { count: used.length, chars }
 }
 
 /** 860 字 / 3,210 字 / 1.2 万字 */

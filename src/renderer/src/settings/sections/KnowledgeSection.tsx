@@ -3,13 +3,13 @@ import { toast } from 'sonner'
 import {
   FileText,
   FileUp,
+  FolderOpen,
   LibraryBig,
   LoaderCircle,
   Pencil,
   Plus,
   RefreshCw,
-  Trash2,
-  TriangleAlert
+  Trash2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,14 +27,17 @@ import { MODE_NAMES } from '@/lib/use-mode-page'
 import type { AppMode } from '@/lib/store/settings'
 import {
   formatChars,
-  formatTokens,
   knowledgeUsage,
   useKnowledgeDocs,
-  KNOWLEDGE_CHAR_LIMIT,
   type KnowledgeDoc,
   type KnowledgeImportResult
 } from '@/lib/knowledge'
 import { SettingsCard } from '../components'
+import {
+  KNOWLEDGE_RETRIEVAL_LIMIT,
+  type KnowledgeFolder,
+  type KnowledgeFolderResult
+} from '../../../../shared/knowledge'
 
 const MODES: { mode: AppMode; label: string }[] = [
   { mode: 'screenshot', label: '截图' },
@@ -53,19 +56,27 @@ const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes('Files')
 
 /**
  * 资料库: material the AI should draw on (resume, prepared Q&A, notes). Main
- * keeps it on disk; each piece is sent with the modes ticked on it, in front of
- * that mode's system prompt. Files can be picked or dropped anywhere here.
+ * keeps it on disk and retrieves relevant files for the modes ticked on it.
+ * Files can be picked, indexed from folders, or dropped here.
  */
 export function KnowledgeSection() {
   const [docs, setDocs] = useKnowledgeDocs()
   const [editing, setEditing] = useState<KnowledgeDoc | 'new' | null>(null)
   const [deleting, setDeleting] = useState<KnowledgeDoc | null>(null)
+  const [folders, setFolders] = useState<KnowledgeFolder[]>([])
+  const [deletingFolder, setDeletingFolder] = useState<KnowledgeFolder | null>(null)
   const [dragging, setDragging] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<KnowledgeImportResult | null>(null)
+  const [importResult, setImportResult] = useState<
+    KnowledgeImportResult | KnowledgeFolderResult | null
+  >(null)
   const importInFlight = useRef(false)
   // dragenter / dragleave fire for every child crossed; only the outermost pair counts
   const dragDepth = useRef(0)
+
+  useEffect(() => {
+    window.api.listKnowledgeFolders().then(setFolders)
+  }, [])
 
   // A file dropped beside the drop zone would otherwise replace the app with the file
   useEffect(() => {
@@ -81,14 +92,31 @@ export function KnowledgeSection() {
   const replaceDoc = (doc: KnowledgeDoc) =>
     setDocs((list) => list?.map((d) => (d.id === doc.id ? doc : d)) ?? null)
 
-  const handleImport = (result: KnowledgeImportResult | null) => {
+  const handleImport = (result: KnowledgeImportResult | KnowledgeFolderResult | null) => {
     if (!result) return
-    setDocs((list) => [...(list ?? []), ...result.added])
+    if ('folder' in result) {
+      const updates = new Map(result.updated.map((doc) => [doc.id, doc]))
+      setDocs((list) => [
+        ...(list ?? [])
+          .filter((doc) => !result.removedIds.includes(doc.id))
+          .map((doc) => updates.get(doc.id) ?? doc),
+        ...result.added
+      ])
+      setFolders((list) => [
+        ...list.filter((folder) => folder.id !== result.folder.id),
+        result.folder
+      ])
+      toast.success('文件夹索引已刷新')
+    } else {
+      setDocs((list) => [...(list ?? []), ...result.added])
+    }
     setImportResult(result)
     reportImport(result)
   }
 
-  const importBatch = async (run: () => Promise<KnowledgeImportResult | null>) => {
+  const importBatch = async (
+    run: () => Promise<KnowledgeImportResult | KnowledgeFolderResult | null>
+  ) => {
     if (importInFlight.current) return
     importInFlight.current = true
     setImporting(true)
@@ -102,6 +130,17 @@ export function KnowledgeSection() {
       importInFlight.current = false
       setImporting(false)
     }
+  }
+
+  const removeFolder = async (folder: KnowledgeFolder) => {
+    setDeletingFolder(null)
+    await importBatch(async () => {
+      await window.api.removeKnowledgeFolder(folder.id)
+      setFolders((list) => list.filter((saved) => saved.id !== folder.id))
+      setDocs((list) => list?.filter((doc) => doc.folderId !== folder.id) ?? null)
+      setImportResult(null)
+      return null
+    })
   }
 
   const toggleMode = async (doc: KnowledgeDoc, mode: AppMode) => {
@@ -155,14 +194,22 @@ export function KnowledgeSection() {
     <div className="relative" aria-busy={importing} {...dropHandlers}>
       <SettingsCard Icon={LibraryBig} title="资料库">
         <p className="-mt-2 mb-4 text-xs font-light">
-          导入简历、准备好的问答、笔记等资料，AI
-          作答时会优先参考；每份资料可以分别选择用于截图模式、对话模式。资料只保存在本机，但会随每次请求一起发给该模式使用的
-          AI 平台
+          选择文件夹，在本机读取文件并建立检索索引。提问时只将相关文件的完整正文和来源文件名发给
+          AI，不会发送整个文件夹。已有单独导入和粘贴的资料也会按问题检索。
         </p>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
+            disabled={importing}
+            onClick={() => importBatch(() => window.api.pickKnowledgeFolder())}
+          >
+            <FolderOpen className="h-4 w-4" />
+            {importing ? '处理索引中…' : '选择文件夹'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             disabled={importing}
             onClick={() => importBatch(() => window.api.pickKnowledgeFiles())}
           >
@@ -187,10 +234,59 @@ export function KnowledgeSection() {
           </span>
         </div>
 
+        <p className="mb-4 text-xs text-gray-600">
+          包含子文件夹，跳过隐藏目录、node_modules
+          和链接目录。文件变更后点击「刷新索引」。本地关键词检索每次最多发送{' '}
+          {KNOWLEDGE_RETRIEVAL_LIMIT}{' '}
+          个相关文件的完整正文，不按字数截断；纯截图会先通过当前视觉模型提取关键词，多一次请求。
+        </p>
+
+        {folders.length > 0 && (
+          <ul className="mb-4 space-y-2">
+            {folders.map((folder) => (
+              <li
+                key={folder.id}
+                className="flex flex-wrap items-center gap-2 rounded-md border p-3"
+              >
+                <FolderOpen className="h-4 w-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {folder.name} · {docs?.filter((doc) => doc.folderId === folder.id).length ?? 0}{' '}
+                    份资料
+                  </p>
+                  <p className="break-all text-xs text-gray-600">{folder.path}</p>
+                  <p className="text-xs text-gray-600">
+                    上次扫描：{new Date(folder.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importing}
+                  onClick={() => importBatch(() => window.api.refreshKnowledgeFolder(folder.id))}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  刷新索引
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importing}
+                  onClick={() => setDeletingFolder(folder)}
+                >
+                  移除
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {importResult && (
           <div className="mb-4 rounded-md border p-3 text-xs" role="status">
             <p>
               本次导入：成功 {importResult.added.length} 份，失败 {importResult.failed.length} 份
+              {'folder' in importResult &&
+                `；更新 ${importResult.updated.length} 份，移除 ${importResult.removedIds.length} 份`}
             </p>
             {importResult.failed.length > 0 && (
               <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-red-600">
@@ -206,13 +302,13 @@ export function KnowledgeSection() {
 
         {docs && docs.length === 0 && (
           <div className="rounded-md border border-dashed border-gray-400 px-4 py-6 text-center text-sm text-gray-600">
-            还没有资料。可以导入简历（PDF / Word），或把准备好的问答粘贴成一份文本
+            还没有资料。选择资料文件夹、导入文件，或新建文本粘贴问答
           </div>
         )}
 
         {docs && docs.length > 0 && (
           <>
-            <ul className="space-y-2">
+            <ul className="max-h-96 space-y-2 overflow-y-auto">
               {docs.map((doc) => (
                 <DocRow
                   key={doc.id}
@@ -263,6 +359,28 @@ export function KnowledgeSection() {
             </Button>
             <Button variant="destructive" onClick={() => deleting && remove(deleting)}>
               删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deletingFolder} onOpenChange={(open) => !open && setDeletingFolder(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>移除资料文件夹</DialogTitle>
+            <DialogDescription>
+              移除「{deletingFolder?.name}」及其本地索引。原文件夹和文件不会删除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingFolder(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletingFolder && removeFolder(deletingFolder)}
+            >
+              移除索引
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -357,42 +475,22 @@ function RowAction({
   )
 }
 
-/** How much each mode sends with every request, against the suggested limit */
+/** Library size is independent of the bounded excerpts sent for a question. */
 function UsageMeter({ docs }: { docs: KnowledgeDoc[] }) {
   const usages = MODES.map(({ mode }) => ({ mode, ...knowledgeUsage(docs, mode) }))
 
   return (
     <div className="mt-4 space-y-2">
-      {usages.map(({ mode, count, chars, tokens, over }) => (
+      {usages.map(({ mode, count, chars }) => (
         <div key={mode}>
           <div className="mb-1 flex justify-between gap-2 text-xs">
-            <span>{MODE_NAMES[mode]}每次请求带上</span>
-            <span className={over ? 'font-medium text-amber-800' : 'text-gray-600'}>
-              {count > 0
-                ? `${count} 份 · ${formatChars(chars)}（${formatTokens(tokens)}）`
-                : '不带资料'}
-              <span className="text-gray-500">
-                {' '}
-                / 建议不超过 {formatChars(KNOWLEDGE_CHAR_LIMIT)}
-              </span>
+            <span>{MODE_NAMES[mode]}可检索资料</span>
+            <span className="text-gray-600">
+              {count > 0 ? `${count} 份 · ${formatChars(chars)}` : '未启用资料'}
             </span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-black/10">
-            <div
-              className={cn('h-full rounded-full', over ? 'bg-amber-600' : 'bg-blue-600')}
-              style={{ width: `${Math.min(100, (chars / KNOWLEDGE_CHAR_LIMIT) * 100)}%` }}
-            />
           </div>
         </div>
       ))}
-      {usages.some((u) => u.over) && (
-        <p className="flex items-start gap-1 text-xs text-amber-800">
-          <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-          <span>
-            超过建议上限：每次请求都会带上全部资料，回答会变慢、费用更高，模型处理不了这么长时请求会失败。可以删掉资料里用不到的部分，或让部分资料不用于该模式
-          </span>
-        </p>
-      )}
     </div>
   )
 }
