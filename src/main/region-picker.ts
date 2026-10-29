@@ -1,16 +1,13 @@
 import { join } from 'node:path'
-import {
-  app,
-  BrowserWindow,
-  desktopCapturer,
-  ipcMain,
-  screen,
-  type Display,
-  type NativeImage
-} from 'electron'
+import { app, BrowserWindow, ipcMain, screen, type Display, type NativeImage } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import type { CaptureRegion, RegionRect } from '../shared/capture-region'
-import { cropScreenshot, findScreenSource, settingsResolution } from './take-screenshot'
+import {
+  captureScreens,
+  cropScreenshot,
+  findScreenSource,
+  settingsResolution
+} from './take-screenshot'
 
 /**
  * `region`: the area every later screenshot is cropped to, confirmed with
@@ -101,7 +98,7 @@ async function pick(as: PickerPurpose, current: CaptureRegion | null): Promise<P
   }
   let sources: Electron.DesktopCapturerSource[]
   try {
-    sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize })
+    sources = await captureScreens(thumbnailSize, displays)
   } catch (error) {
     active = false
     throw error
@@ -113,7 +110,8 @@ async function pick(as: PickerPurpose, current: CaptureRegion | null): Promise<P
     savedRegion = current
     pickers = displays.flatMap((display) => {
       const source = findScreenSource(sources, display)
-      if (!source) return []
+      // An empty capture never loads in the page, so its window would never show
+      if (!source || source.thumbnail.isEmpty()) return []
       const capture = source.thumbnail
       const image = `data:image/jpeg;base64,${capture.toJPEG(90).toString('base64')}`
       return [{ display, capture, image, window: createPickerWindow(display) }]

@@ -46,6 +46,23 @@ export function findScreenSource(
 }
 
 /**
+ * Capture every screen, `displays` being the ones the caller needs. The first
+ * capture after launch now and then comes back empty for one screen (seen on
+ * macOS with an external one) while the next is fine, so a needed screen that
+ * comes back empty is captured once more.
+ */
+export async function captureScreens(
+  thumbnailSize: Electron.Size,
+  displays: Display[]
+): Promise<DesktopCapturerSource[]> {
+  const capture = (): Promise<DesktopCapturerSource[]> =>
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize })
+  const sources = await capture()
+  const hasEmpty = displays.some((d) => findScreenSource(sources, d)?.thumbnail.isEmpty())
+  return hasEmpty ? capture() : sources
+}
+
+/**
  * What to capture. A region pins the capture to its own screen; otherwise it
  * is the screen fixed in settings, or the one under the cursor. A chosen
  * screen that is no longer connected is passed over, keeping the choice for
@@ -71,8 +88,7 @@ export function takeScreenshot(): Promise<string | void> {
   const { display, region } = getCaptureTarget()
   const { width, height } = display.size
 
-  return desktopCapturer
-    .getSources({ types: ['screen'], thumbnailSize: { width, height } })
+  return captureScreens({ width, height }, [display])
     .then((sources) => {
       if (sources.length === 0) return undefined
       const { thumbnail } = findScreenSource(sources, display) ?? sources[0]
