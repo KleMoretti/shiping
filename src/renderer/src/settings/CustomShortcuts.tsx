@@ -92,6 +92,11 @@ export function CustomShortcuts() {
             shortcut="takeScreenshot"
           />
           <Shortcut
+            label="框选识别"
+            description="拖出一块区域，松开鼠标即截图并生成解题建议（会新开对话）；只截这一次，不改变截图区域"
+            shortcut="snipScreenshot"
+          />
+          <Shortcut
             label="追加截图"
             description="在当前对话中追加截图并生成解题建议，适用于长题目等场景"
             shortcut="appendScreenshot"

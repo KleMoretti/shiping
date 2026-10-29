@@ -71,6 +71,11 @@ const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
     key: `${platformAlt}+Enter`,
     category: 'Screenshot'
   },
+  snipScreenshot: {
+    action: 'snipScreenshot',
+    key: `${platformAlt}+Shift+S`,
+    category: 'Screenshot'
+  },
   appendScreenshot: {
     action: 'appendScreenshot',
     key: `${platformAlt}+Shift+Enter`,

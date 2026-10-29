@@ -1,11 +1,27 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, desktopCapturer, ipcMain, screen, type Display } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  ipcMain,
+  screen,
+  type Display,
+  type NativeImage
+} from 'electron'
 import { is } from '@electron-toolkit/utils'
 import type { CaptureRegion, RegionRect } from '../shared/capture-region'
-import { findScreenSource, settingsResolution } from './take-screenshot'
+import { cropScreenshot, findScreenSource, settingsResolution } from './take-screenshot'
+
+/**
+ * `region`: the area every later screenshot is cropped to, confirmed with
+ * Enter / double-click. `screenshot`: one screenshot of the area, taken the
+ * moment the drag ends.
+ */
+export type PickerPurpose = 'region' | 'screenshot'
 
 /** What a picker window draws on: its screen, frozen, and the region already set there */
 export interface RegionPickerData {
+  purpose: PickerPurpose
   /** JPEG data URL of the screen as it was when picking started */
   image: string
   /** The saved region, when it is on this screen */
@@ -18,7 +34,14 @@ export interface RegionPickerData {
 interface Picker {
   window: BrowserWindow
   display: Display
+  /** The frozen screen, at full resolution */
+  capture: NativeImage
   image: string
+}
+
+interface Picked {
+  region: CaptureRegion
+  picker: Picker
 }
 
 /** Above the main window (100) and the toolbar (101) at the same `screen-saver` level */
@@ -34,19 +57,39 @@ const PICKER_SHOW_TIMEOUT = 10 * 1000
 /** Set before the first await, so a second request cannot slip in while the screens are captured */
 let active = false
 let pickers: Picker[] = []
+let purpose: PickerPurpose = 'region'
 let savedRegion: CaptureRegion | null = null
-let settle: ((region: CaptureRegion | null) => void) | null = null
+let settle: ((picked: Picked | null) => void) | null = null
 let timeout: NodeJS.Timeout | null = null
 
 /**
- * Let the user drag out the area screenshots are cropped to. Every screen gets
- * a full-screen window showing a frozen capture of itself, so the user picks
- * from exactly what a screenshot will see (the app's own windows are left out
- * by content protection). Resolves with the new region, or null if cancelled.
+ * Let the user drag out the area screenshots are cropped to. Resolves with the
+ * new region, or null if cancelled.
  */
 export async function pickCaptureRegion(
   current: CaptureRegion | null
 ): Promise<CaptureRegion | null> {
+  return (await pick('region', current))?.region ?? null
+}
+
+/**
+ * Let the user drag out an area and screenshot just that, once, leaving the
+ * capture region as it is. The screenshot is cut from the frozen screen the
+ * user dragged on, so it holds exactly what they saw, even a menu or tooltip
+ * that closed when the picker took focus. Resolves with base64 PNG, or null if
+ * cancelled.
+ */
+export async function pickScreenshot(): Promise<string | null> {
+  const picked = await pick('screenshot', null)
+  return picked && cropScreenshot(picked.picker.capture, picked.picker.display, picked.region)
+}
+
+/**
+ * Every screen gets a full-screen window showing a frozen capture of itself,
+ * so the user picks from exactly what a screenshot will see (the app's own
+ * windows are left out by content protection).
+ */
+async function pick(as: PickerPurpose, current: CaptureRegion | null): Promise<Picked | null> {
   if (active) return null
   active = true
 
@@ -66,12 +109,14 @@ export async function pickCaptureRegion(
 
   return new Promise((resolve) => {
     settle = resolve
+    purpose = as
     savedRegion = current
     pickers = displays.flatMap((display) => {
       const source = findScreenSource(sources, display)
       if (!source) return []
-      const image = `data:image/jpeg;base64,${source.thumbnail.toJPEG(90).toString('base64')}`
-      return [{ display, image, window: createPickerWindow(display) }]
+      const capture = source.thumbnail
+      const image = `data:image/jpeg;base64,${capture.toJPEG(90).toString('base64')}`
+      return [{ display, capture, image, window: createPickerWindow(display) }]
     })
     if (pickers.length === 0) {
       finish(null)
@@ -143,7 +188,7 @@ function createPickerWindow(display: Display): BrowserWindow {
   return window
 }
 
-function finish(region: CaptureRegion | null): void {
+function finish(picked: Picked | null): void {
   const resolve = settle
   if (!resolve) return
   settle = null
@@ -156,7 +201,7 @@ function finish(region: CaptureRegion | null): void {
   for (const picker of closing) {
     if (!picker.window.isDestroyed()) picker.window.destroy()
   }
-  resolve(region)
+  resolve(picked)
 }
 
 function pickerOf(sender: Electron.WebContents): Picker | undefined {
@@ -168,6 +213,7 @@ ipcMain.handle('getRegionPickerData', (event): RegionPickerData | null => {
   if (!picker) return null
   const displayId = String(picker.display.id)
   return {
+    purpose,
     image: picker.image,
     region: savedRegion?.displayId === displayId ? savedRegion : null,
     ...settingsResolution(picker.display)
@@ -209,5 +255,5 @@ ipcMain.on('finish-region-picker', (event, rect: RegionRect | null) => {
   if (!picker) return
   if (!isRegionRect(rect)) return finish(null)
   const { x, y, width, height } = rect
-  finish({ displayId: String(picker.display.id), x, y, width, height })
+  finish({ region: { displayId: String(picker.display.id), x, y, width, height }, picker })
 })

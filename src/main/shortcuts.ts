@@ -10,7 +10,7 @@ import {
   sendToToolbar
 } from './toolbar-window'
 import { takeScreenshot } from './take-screenshot'
-import { pickCaptureRegion } from './region-picker'
+import { pickCaptureRegion, pickScreenshot } from './region-picker'
 import type { CaptureRegion } from '../shared/capture-region'
 import { saveScreenshotToDisk } from './save-screenshot'
 import { handleGeneratedCode } from './save-code'
@@ -219,6 +219,12 @@ function showMainWindow(window: BrowserWindow) {
   keepWindowInFront(window)
 }
 
+/** Undo `hideOrShowMainWindow`'s hiding, whichever way it hid the window */
+function revealMainWindow(window: BrowserWindow) {
+  if (isWindowSoftHidden) restoreSoftHiddenWindow(window)
+  else if (!window.isVisible()) showMainWindow(window)
+}
+
 function keepWindowInFront(window: BrowserWindow) {
   if (!window || window.isDestroyed()) return
   if (frontReassertTimer) {
@@ -382,6 +388,22 @@ function reportDuration() {
 }
 
 /**
+ * Keep the main window out of the way while the user drags on the region
+ * picker: it would cover part of the screen, and the top-most guard would keep
+ * lifting it back above the picker. A window that was already soft-hidden, by
+ * the user or by a pick in progress, is left for whoever hid it to bring back.
+ */
+async function whilePicking<T>(mainWindow: BrowserWindow, pick: () => Promise<T>): Promise<T> {
+  const wasHidden = isWindowSoftHidden
+  softHideWindow(mainWindow)
+  try {
+    return await pick()
+  } finally {
+    if (!wasHidden) restoreSoftHiddenWindow(mainWindow)
+  }
+}
+
+/**
  * Let the user drag out a new capture region, from the settings page, the
  * toolbar or the shortcut. The result applies here at once, and goes to the
  * renderer too, whose store is what persists it.
@@ -389,22 +411,12 @@ function reportDuration() {
 async function pickRegion(): Promise<CaptureRegion | null> {
   const mainWindow = global.mainWindow
   if (!mainWindow || mainWindow.isDestroyed()) return null
-  // Out of the way while the user drags: it would cover part of the screen, and
-  // the top-most guard would keep lifting it back above the picker. A window
-  // that was already soft-hidden, by the user or by a pick in progress, is
-  // left for whoever hid it to bring back.
-  const wasHidden = isWindowSoftHidden
-  softHideWindow(mainWindow)
-  try {
-    const region = await pickCaptureRegion(settings.captureRegion)
-    if (region) {
-      settings.captureRegion = region
-      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('capture-region-picked', region)
-    }
-    return region
-  } finally {
-    if (!wasHidden) restoreSoftHiddenWindow(mainWindow)
+  const region = await whilePicking(mainWindow, () => pickCaptureRegion(settings.captureRegion))
+  if (region) {
+    settings.captureRegion = region
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('capture-region-picked', region)
   }
+  return region
 }
 
 /**
@@ -482,6 +494,54 @@ function switchMode() {
   mainWindow.webContents.send('switch-mode')
 }
 
+/** Start a new conversation from one screenshot, with the transcription text not yet sent */
+async function startScreenshotConversation(mainWindow: BrowserWindow, screenshotData: string) {
+  saveScreenshotToDisk(screenshotData)
+  const transcriptionText = getTranscriptionText()
+  if (transcriptionText) {
+    clearTranscriptionText()
+    mainWindow.webContents.send('transcription-cleared')
+  }
+  conversationMessages = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: transcriptionText
+            ? `这是语音转录内容：\n${transcriptionText}\n\n同时附上屏幕截图：`
+            : '这是屏幕截图'
+        },
+        {
+          type: 'image',
+          image: screenshotData
+        }
+      ]
+    }
+  ]
+
+  const streamContext = beginStream()
+  recentScreenshots = [screenshotData]
+  screenshotCount = 1
+  hasAppendSeparator = false
+  mainWindow.webContents.send('solution-clear')
+  updateMobileAnswer({ id: mobileAnswer.id + 1, text: '', screenshots: screenshotCount })
+  mainWindow.webContents.send('screenshots-updated', recentScreenshots, screenshotCount)
+  mainWindow.webContents.send('screenshot-taken', screenshotData)
+  await runAnswer(
+    mainWindow,
+    streamContext,
+    (signal) => getSolutionStream(conversationMessages, signal),
+    (answer) => {
+      if (!answer) return
+      conversationMessages.push({ role: 'assistant', content: answer })
+      // 答案已经写完，才处理代码（中途停止或报错不会走到这里）
+      handleGeneratedCode(answer)
+    },
+    { showLoading: true }
+  )
+}
+
 const callbacks: Record<string, () => void> = {
   hideOrShowMainWindow: async () => {
     const mainWindow = global.mainWindow
@@ -524,51 +584,28 @@ const callbacks: Record<string, () => void> = {
     // Overtaken by a newer screenshot, or stopped, while capturing
     if (requestId !== screenshotRequestId) return
     if (!screenshotData || mainWindow.isDestroyed()) return
+    await startScreenshotConversation(mainWindow, screenshotData)
+  },
 
-    saveScreenshotToDisk(screenshotData)
-    const transcriptionText = getTranscriptionText()
-    if (transcriptionText) {
-      clearTranscriptionText()
-      mainWindow.webContents.send('transcription-cleared')
-    }
-    conversationMessages = [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: transcriptionText
-              ? `这是语音转录内容：\n${transcriptionText}\n\n同时附上屏幕截图：`
-              : '这是屏幕截图'
-          },
-          {
-            type: 'image',
-            image: screenshotData
-          }
-        ]
-      }
-    ]
+  /**
+   * Drag out an area and get an answer about just that, leaving the capture
+   * region alone: the screenshot-tool way, with the window kept hidden until
+   * needed. So the answer is shown even if the window was hidden; a cancelled
+   * pick leaves the window as it was.
+   */
+  snipScreenshot: async () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    if (!screenshotProfileReady(mainWindow)) return
 
-    const streamContext = beginStream()
-    recentScreenshots = [screenshotData]
-    screenshotCount = 1
-    hasAppendSeparator = false
-    mainWindow.webContents.send('solution-clear')
-    updateMobileAnswer({ id: mobileAnswer.id + 1, text: '', screenshots: screenshotCount })
-    mainWindow.webContents.send('screenshots-updated', recentScreenshots, screenshotCount)
-    mainWindow.webContents.send('screenshot-taken', screenshotData)
-    await runAnswer(
-      mainWindow,
-      streamContext,
-      (signal) => getSolutionStream(conversationMessages, signal),
-      (answer) => {
-        if (!answer) return
-        conversationMessages.push({ role: 'assistant', content: answer })
-        // 答案已经写完，才处理代码（中途停止或报错不会走到这里）
-        handleGeneratedCode(answer)
-      },
-      { showLoading: true }
-    )
+    const screenshotData = await whilePicking(mainWindow, pickScreenshot)
+    if (!screenshotData || mainWindow.isDestroyed()) return
+    revealMainWindow(mainWindow)
+    // The wait starts when the drag ends, not while the user is still picking
+    startTiming()
+    // A screenshot still being captured from before the drag ended loses to this one
+    screenshotRequestId++
+    await startScreenshotConversation(mainWindow, screenshotData)
   },
 
   // Append screenshot for continuous capture (if conversation exists)

@@ -55,7 +55,7 @@ src/
 │   ├── settings.ts          # App settings object + IPC handlers
 │   ├── state.ts             # App state object + IPC handlers
 │   ├── take-screenshot.ts   # desktopCapturer → base64 PNG of the screen under the cursor or a fixed one, cropped to `captureRegion`; `getDisplays` IPC
-│   ├── region-picker.ts     # One full-screen window per screen to drag out the capture region
+│   ├── region-picker.ts     # One full-screen window per screen to drag out the capture region, or a one-off screenshot's area
 │   ├── save-screenshot.ts   # Optional auto-save of each screenshot to a folder
 │   ├── save-code.ts         # First code block of a finished answer → clipboard and/or source file
 │   ├── save-conversation.ts # 对话模式's conversation → one Markdown file per conversation
@@ -320,12 +320,13 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 
 `captureRegion` crops every screenshot to one area of one screen, stored as fractions of that screen (`src/shared/capture-region.ts`) so a resolution or scaling change does not shift it:
 - Three entry points — the settings button, the toolbar button and the `pickCaptureRegion` shortcut — all go through `pickRegion()` in `shortcuts.ts`, which applies the result to main's `settings` at once and sends `capture-region-picked` for the renderer store to persist
-- `pickRegion()` soft-hides the main window (unless it already was), then `region-picker.ts` opens one window per screen at `screen-saver` level above the main window and toolbar, each showing a frozen capture of its screen (content protection keeps the app out of it)
+- `pickRegion()` soft-hides the main window through `whilePicking()` (unless it already was), then `region-picker.ts` opens one window per screen at `screen-saver` level above the main window and toolbar, each showing a frozen capture of its screen (content protection keeps the app out of it)
 - Started from a shortcut or the toolbar, another app is active: the picker under the cursor takes focus (`app.focus({ steal: true })` on macOS) so Enter / Esc cannot land in, say, an exam page, and `acceptFirstMouse` lets the first click start a drag
 - The picker route is rendered straight from `main.tsx`, skipping `App`: a throwaway window must not sync settings or re-register shortcuts
 - The pickers cover every screen, so any exit — Enter / Esc, closing one, a crashed or unresponsive renderer, a 5-minute timeout — closes them all and restores the main window
 - The dimming around the selection is four plain panels: a `clip-path` hole or a huge `box-shadow` did not paint over the full-screen image
 - A region whose screen is disconnected is kept but ignored until it comes back, so the whole screen is captured meanwhile
+- 「框选识别」 (`snipScreenshot`) reuses the pickers for one screenshot (`purpose: 'screenshot'`), leaving `captureRegion` alone: releasing the drag ends the pick, and `pickScreenshot()` cuts the area from the frozen capture the user dragged on rather than capturing again (a menu may have closed when the picker took focus), scaled to the DIP size `takeScreenshot()` produces. It starts a new conversation like `takeScreenshot`, and shows the window if `hideOrShowMainWindow` had hidden it
 
 ### Conversation Mode (对话模式)
 

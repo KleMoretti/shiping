@@ -65,6 +65,7 @@ const getShortcutDescription = (action: string) => {
     increaseOpacity: '提高不透明度(窗口更清晰)',
     decreaseOpacity: '提高透明度(窗口更透明)',
     takeScreenshot: '截图并生成解题建议（会新开对话）',
+    snipScreenshot: '框选一块区域截图并生成解题建议（只截这一次）',
     appendScreenshot: '追加截图并生成解题建议',
     pickCaptureRegion: '框选截图区域（之后只截这块）',
     generateHint: '立即出提示（没有新内容时换个说法重出）',

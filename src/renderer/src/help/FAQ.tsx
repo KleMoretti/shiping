@@ -67,6 +67,20 @@ const faqs = [
     )
   },
   {
+    question: '能像截图工具一样常驻后台，按快捷键随时框选识别吗？',
+    answer: (
+      <span>
+        可以。按
+        <ShortcutRenderer shortcut={`${platformAlt}+H`} className="text-xs mx-1" />
+        隐藏窗口后应用仍在后台运行，快捷键照常可用（macOS 还可以在「设置 → 界面与隐私」隐藏 Dock
+        图标）。需要时按
+        <ShortcutRenderer shortcut={`${platformAlt}+Shift+S`} className="text-xs mx-1" />
+        ，在定格的屏幕画面上拖出要识别的范围，松开鼠标就发给
+        AI，窗口随即显示出解答。这样框选只截这一次，不改变「截图区域」设置。
+      </span>
+    )
+  },
+  {
     question: '分享屏幕时，对方能看到应用吗？',
     answer: (
       <span>

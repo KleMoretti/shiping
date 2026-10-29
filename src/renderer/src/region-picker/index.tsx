@@ -17,6 +17,9 @@ const BAR_FLIP_TOP = 0.15
 
 const percent = (fraction: number): string => `${fraction * 100}%`
 
+const isDrag = (a: Point, b: Point): boolean =>
+  Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) >= MIN_DRAG
+
 /**
  * Four plain panels that dim everything around `rect`. Plain rectangles on
  * purpose: a clip-path hole or a huge box-shadow on the selection does not
@@ -56,13 +59,15 @@ const cancel = (): void => window.api.finishRegionPicker(null)
 /**
  * One screen's worth of the capture-region picker (see main/region-picker.ts):
  * a frozen capture of the screen to drag a rectangle on. It starts from the
- * region already saved on this screen, if any.
+ * region already saved on this screen, if any. Picking a one-off screenshot,
+ * the drag ends the pick, like the system's own area screenshot.
  */
 export default function RegionPicker() {
   const [data, setData] = useState<PickerData | null>(null)
   const [rect, setRect] = useState<RegionRect | null>(null)
   const [dragging, setDragging] = useState(false)
   const origin = useRef<Point | null>(null)
+  const oneShot = data?.purpose === 'screenshot'
 
   useEffect(() => {
     void window.api.getRegionPickerData().then((picked) => {
@@ -92,17 +97,23 @@ export default function RegionPicker() {
     if (!start) return
     const point = pointOf(e)
     // Until the press really moves, it is a click and the current selection stays
-    if (
-      !dragging &&
-      Math.max(Math.abs(point.x - start.x), Math.abs(point.y - start.y)) < MIN_DRAG
-    ) {
-      return
-    }
+    if (!dragging && !isDrag(start, point)) return
     setDragging(true)
     setRect(spanRect(start, point))
   }
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    const start = origin.current
+    origin.current = null
+    setDragging(false)
+    if (!oneShot || !start) return
+    const point = pointOf(e)
+    if (!dragging && !isDrag(start, point)) return
+    const picked = spanRect(start, point)
+    if (picked.width > 0 && picked.height > 0) confirm(picked)
+  }
+
+  const handlePointerCancel = () => {
     origin.current = null
     setDragging(false)
   }
@@ -118,7 +129,7 @@ export default function RegionPicker() {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onDoubleClick={() => rect && confirm(rect)}
     >
       <img
@@ -157,18 +168,27 @@ export default function RegionPicker() {
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <span>{size ? `${size.width} × ${size.height}` : '拖动鼠标框选截图区域'}</span>
-          <span className="text-xs text-neutral-400">
-            {size ? '可重新拖动；Enter 或双击确认，Esc 取消' : 'Esc 取消'}
-          </span>
-          <button
-            className="flex items-center gap-1 rounded-md bg-sky-500 px-3 py-1 hover:bg-sky-400 disabled:opacity-40 disabled:hover:bg-sky-500"
-            disabled={!rect}
-            onClick={() => rect && confirm(rect)}
-          >
-            <Check className="h-4 w-4" />
-            确定
-          </button>
+          {oneShot ? (
+            <>
+              <span>拖动鼠标框选要识别的区域</span>
+              <span className="text-xs text-neutral-400">松开鼠标即截图发给 AI，Esc 取消</span>
+            </>
+          ) : (
+            <>
+              <span>{size ? `${size.width} × ${size.height}` : '拖动鼠标框选截图区域'}</span>
+              <span className="text-xs text-neutral-400">
+                {size ? '可重新拖动；Enter 或双击确认，Esc 取消' : 'Esc 取消'}
+              </span>
+              <button
+                className="flex items-center gap-1 rounded-md bg-sky-500 px-3 py-1 hover:bg-sky-400 disabled:opacity-40 disabled:hover:bg-sky-500"
+                disabled={!rect}
+                onClick={() => rect && confirm(rect)}
+              >
+                <Check className="h-4 w-4" />
+                确定
+              </button>
+            </>
+          )}
           <button
             className="flex items-center gap-1 rounded-md bg-white/10 px-3 py-1 hover:bg-white/20"
             onClick={cancel}

@@ -3,7 +3,8 @@ import {
   ipcMain,
   screen,
   type DesktopCapturerSource,
-  type Display
+  type Display,
+  type NativeImage
 } from 'electron'
 import { regionToPixels, type RegionRect } from '../shared/capture-region'
 import { settings } from './settings'
@@ -81,6 +82,20 @@ export function takeScreenshot(): Promise<string | void> {
     .catch((error) => {
       console.error('Error taking screenshot:', error)
     })
+}
+
+/**
+ * An area of a capture of `display`, taken at whatever resolution, as the
+ * screenshot takeScreenshot() would make of it: sized in DIPs, not physical
+ * pixels, so it costs the model what the same area of a full capture would.
+ */
+export function cropScreenshot(capture: NativeImage, display: Display, area: RegionRect): string {
+  const { width, height } = regionToPixels(area, display.size)
+  return capture
+    .crop(regionToPixels(area, capture.getSize()))
+    .resize({ width, height, quality: 'best' })
+    .toPNG()
+    .toString('base64')
 }
 
 /** Connected screens, numbered left to right so the list matches the desk */
